@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "quantumshield"
+version = "0.1.0"
+description = "Post-quantum cryptographic discovery, CycloneDX 1.6 CBOM generation, and quantum readiness scoring"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+authors = [{name = "Pranay"}]
+keywords = ["post-quantum", "PQC", "CBOM", "CycloneDX", "cryptography", "security", "quantum"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Information Technology",
+    "Topic :: Security :: Cryptography",
+    "Programming Language :: Python :: 3",
+]
+dependencies = []
+
+[project.optional-dependencies]
+certs = ["cryptography>=41"]
+dev = ["pytest>=7", "cryptography>=41"]
+
+[project.scripts]
+quantumshield = "quantumshield.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["quantumshield*"]

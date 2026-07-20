@@ -1,0 +1,75 @@
+# CLAUDE.md — QuantumShield project context
+
+This file is read automatically by Claude Code at the start of every session in
+this repo. It carries the full project context so the owner never has to
+re-explain it.
+
+## What this project is
+
+QuantumShield is a post-quantum cryptography (PQC) discovery tool: it scans a
+codebase/filesystem for cryptographic usage, parses X.509 certificates, emits a
+**CycloneDX 1.6 CBOM** (`cryptographic-asset` components with evidence), and
+produces a 0–100 **quantum readiness score** plus a self-contained HTML report.
+Exit code 1 on CRITICAL findings makes it a CI quantum-exposure gate.
+
+It is v0.1 (discovery engine 1 of 4) of a larger product vision: a PQC agility
+platform (part of the owner's "Ketsig" product family, alongside OT-PQC Scout,
+a pcap-based OT/ICS quantum readiness scanner). Target audience: security
+engineering teams starting PQC migration; near-term goal is design-partner
+conversations, and relevance to India's CBOM mandate (FY 2027-28) and global
+PQC migration timelines.
+
+## Architecture
+
+- `quantumshield/patterns.py` — algorithm knowledge base (severity, NIST QSL,
+  OID, remediation text) + regex detection patterns. **All detection knowledge
+  lives here**; scanner logic stays generic.
+- `quantumshield/scanner.py` — filesystem walk, line-by-line pattern matching,
+  weak-TLS-protocol detection, X.509 parsing (via optional `cryptography`).
+  Produces `Finding` objects (one per unique asset, with `Occurrence` evidence).
+- `quantumshield/cbom.py` — CycloneDX 1.6 CBOM builder + scoring engine.
+- `quantumshield/report.py` — self-contained HTML report (inline CSS, palette:
+  ink #0E1726, bg #F4F7FA, violet #5B4BD4, severity colors in SEV_COLORS).
+- `quantumshield/cli.py` — argparse CLI, `scan` command.
+- `tests/test_quantumshield.py` — 16 pytest tests.
+
+## Conventions and invariants
+
+- Python ≥3.10, stdlib-only core; `cryptography` is optional (cert parsing
+  degrades gracefully). Do not add hard dependencies without strong reason.
+- Severity model (do not change without discussion):
+  CRITICAL = Shor-breakable (RSA/ECC/ECDH/DH/DSA + vulnerable certs/keys),
+  HIGH = classically broken (MD5, SHA-1, DES, 3DES, RC4, TLS ≤1.1),
+  MEDIUM = Grover-reduced (AES-128, SHA-224), LOW = monitor (SHA-256),
+  SAFE = AES-256, SHA-384+, SHA-3, ML-KEM, ML-DSA, SLH-DSA.
+- Never parse private keys — header detection only (see `KEY_HEADERS`).
+- New detection patterns MUST ship with: a positive test AND a false-positive
+  guard test (see `test_lowercase_des_variable_not_flagged` — a real bug we
+  caught: bare-word DES must be case-sensitive).
+- CBOM must stay valid CycloneDX 1.6; `cryptographic-asset` component type.
+- Run `pytest` before considering any change done. CI: `.github/workflows/ci.yml`.
+
+## Roadmap (in priority order)
+
+1. **Engine 2 — network TLS prober** (`quantumshield/tls_probe.py`, new
+   `probe` CLI command): given host:port list, perform TLS handshakes and
+   report negotiated protocol version, cipher suite, key-exchange group;
+   detect hybrid PQC groups (X25519MLKEM768, group id 0x11ec / 4588) via the
+   `ssl` module where possible and raw ClientHello crafting where not.
+   Same CBOM + scoring + report pipeline. Findings as `asset_type="protocol"`.
+2. AST-based detection for Python (`ast` module) and JS to reduce regex false
+   positives and capture key sizes from call arguments.
+3. Mosca-inequality migration urgency per asset (user supplies data shelf-life
+   and migration time; flag where shelf-life + migration > CRQC estimate).
+4. Lockfile/dependency analysis (map requirements.txt / package-lock.json
+   crypto libraries to known primitives).
+5. SaaS layer (multi-repo tracking, CBOM diffing over time) — design-partner
+   validation FIRST, do not build speculatively.
+
+## Owner context
+
+- Owner: Pranay — senior cybersecurity engineer (detection engineering, IR,
+  Microsoft Sentinel/KQL, MDR background), building a PQC portfolio/brand.
+- Public artifacts matter: README quality, demo assets, and honest limitation
+  notes are part of the product. Keep the tone credible, not salesy.
+- Related repos to keep stylistically consistent: OT-PQC Scout, Q|Vault.
