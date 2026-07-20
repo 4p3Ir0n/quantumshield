@@ -12,9 +12,12 @@ self-contained HTML report with a 0-100 quantum readiness score.
 ## Quick start
 
 ```bash
-pip install -e ".[certs]"
+pip install -e ".[certs]"          # add ,js for JavaScript AST, ,web for the demo UI
 quantumshield scan /path/to/repo -o results/
 ```
+
+Optional extras: `certs` (X.509 parsing), `js` (JavaScript AST detection via
+esprima), `web` (the demo web UI). The core is stdlib-only.
 
 Outputs:
 
@@ -50,7 +53,7 @@ quantumshield probe example.com:443 legacy-host:443 -o probe-results/
 ```
 
 ```
-QuantumShield v0.2.0 — probing 2 target(s) ...
+QuantumShield v0.3.0 — probing 2 target(s) ...
   Targets probed: 2 | reachable: 2
   Quantum readiness: 92/100 (grade A)
     HIGH     1
@@ -58,18 +61,34 @@ QuantumShield v0.2.0 — probing 2 target(s) ...
     legacy-host:443       TLSv1.1 | ECDHE-RSA-AES256-SHA | group=unknown (TLS<1.3)
 ```
 
+### Demo web UI
+
+A browser front-end for demonstrating a scan: enter a repo path, get the live
+dashboard (score, exposure spectrum, per-finding evidence). Needs the `[web]`
+extra.
+
+```bash
+pip install -e ".[web]"
+quantumshield serve            # http://127.0.0.1:8000
+```
+
+Routes: `/` (scan form + embedded report), `/report?path=…` (the HTML report),
+`/api/scan?path=…` (raw CycloneDX 1.6 CBOM as JSON), `/healthz`.
+
 ## What it detects
 
 - **Source code** (Python, JS/TS, Java, Go, C/C++, Rust, C#, Ruby, PHP, and more):
   RSA, ECC/ECDSA/ECDH, DH, DSA, MD5, SHA-1, DES/3DES, RC4, Blowfish, AES
   (by key size), SHA-2/SHA-3 family, ChaCha20 — plus **positive detection of
   PQC adoption** (ML-KEM/Kyber, ML-DSA/Dilithium, SLH-DSA/SPHINCS+)
-- **Python via AST** (not regex): Python files are analysed with the stdlib
-  `ast` module, so detection fires only on real call sites — resolved through
-  the file's own import aliases — never on keywords in comments or strings.
-  Key sizes (`rsa.generate_private_key(key_size=3072)`) and EC curve names are
-  read straight from the call arguments. Files that fail to parse fall back to
-  regex.
+- **Python & JS via AST** (not regex): Python files are analysed with the
+  stdlib `ast` module, and JavaScript (`.js`/`.mjs`/`.cjs`) with `esprima`
+  when the optional `[js]` extra is installed. Detection fires only on real
+  call sites — resolved through the file's own import aliases — never on
+  keywords in comments or strings, and structured detail is read straight from
+  the arguments: RSA key size (`generate_private_key(key_size=3072)`,
+  `generateKeyPairSync('rsa', {modulusLength: 3072})`), EC curve names, and
+  WebCrypto AES key length. Files that fail to parse fall back to regex.
 - **Config files**: weak TLS protocol versions and cipher suites in nginx,
   Apache, sshd, OpenSSL configs
 - **Certificates & keys**: parses X.509 (PEM/DER) for public key algorithm,
@@ -97,7 +116,7 @@ than a stray import. Grades: A >= 90, B >= 75, C >= 55, D >= 35, else F.
 
 ```bash
 pip install -e ".[dev]"
-pytest          # 67 tests
+pytest          # 95 tests
 ```
 
 Architecture, conventions, and roadmap live in [CLAUDE.md](CLAUDE.md) — the
@@ -107,17 +126,22 @@ repo is set up for AI-assisted development with Claude Code.
 
 - [x] **Engine 2 — network**: live TLS handshake probing (protocol, cipher
       suite, key-exchange group, hybrid PQC detection e.g. X25519MLKEM768)
-- [x] AST-based detection (Python) to cut false positives and capture key sizes
+- [x] AST-based detection (Python + JavaScript) to cut false positives and capture key sizes
 - [ ] Mosca-inequality migration urgency modelling per asset
 - [ ] Dependency/lockfile crypto analysis
 - [ ] Multi-repo tracking and CBOM diffing over time
 
 ## Known limitations
 
-- Non-Python source is still matched by regex, which can miss dynamically
-  constructed algorithm names and may flag keywords in comments or strings;
-  review evidence lines in the report. Python is analysed by AST and is not
-  subject to this (see below).
+- Python and JavaScript (`.js`/`.mjs`/`.cjs`, with the `[js]` extra) are
+  analysed by AST and don't suffer comment/string false positives. Other
+  source — and TypeScript/JSX, which esprima doesn't parse — is matched by
+  regex, which can miss dynamically constructed algorithm names and may flag
+  keywords in comments or strings; review evidence lines in the report.
+- AST detects recognised crypto *API calls*, not hand-rolled implementations:
+  a bespoke RC4 written out as array operations won't be flagged (regex would
+  catch the keyword, at the cost of false positives). Use a real cipher call
+  (`crypto.createCipheriv('rc4', …)`) and it's caught.
 - AST detection (Python) reads key sizes from call arguments only when they're
   statically visible. An AES key loaded at runtime (e.g. from a KMS/env) can't
   be sized, so `AESGCM(runtime_key)` is recorded as AES usage but without a

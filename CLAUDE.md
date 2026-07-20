@@ -24,16 +24,24 @@ PQC migration timelines.
 - `quantumshield/patterns.py` — algorithm knowledge base (severity, NIST QSL,
   OID, remediation text) + regex detection patterns. **All detection knowledge
   lives here**; scanner logic stays generic.
-- `quantumshield/ast_detect.py` — AST-based Python detection. `.py` files that
-  parse cleanly are analysed here instead of by regex: precise call-site
-  detection resolved through the file's import aliases, key sizes / EC curve
-  names pulled from call args, no comment/string false positives. Emits
-  `ASTFinding`s that the scanner maps onto the same algorithm knowledge base.
-  Files that fail to parse fall back to regex.
+- `quantumshield/ast_detect.py` — AST-based Python detection (stdlib `ast`).
+  `.py` files that parse cleanly are analysed here instead of by regex:
+  precise call-site detection resolved through the file's import aliases, key
+  sizes / EC curve names pulled from call args, no comment/string false
+  positives. Emits `ASTFinding`s the scanner maps onto the algorithm KB.
+- `quantumshield/js_detect.py` — AST-based JavaScript detection via optional
+  `esprima` (`[js]` extra). Same idea for `.js`/`.mjs`/`.cjs`: node crypto
+  (`createHash`/`createCipheriv`/`generateKeyPairSync`), WebCrypto subtle
+  algorithm objects, jwt algorithm strings, PQC markers; modulusLength / AES
+  length / curve pulled from args. TS/JSX aren't parsed (→ regex). `HAVE_ESPRIMA`
+  gates it; emits `JSFinding`s.
 - `quantumshield/scanner.py` — filesystem walk, per-file detection (AST for
-  parseable Python, regex otherwise), weak-TLS-protocol detection, X.509
+  parseable Python & JS, regex otherwise), weak-TLS-protocol detection, X.509
   parsing (via optional `cryptography`). Produces `Finding` objects (one per
   unique asset, with `Occurrence` evidence).
+- `quantumshield/webapp.py` — optional demo web UI (FastAPI, `[web]` extra,
+  `quantumshield serve`). Thin wrapper over the scanner: `/`, `/report`,
+  `/api/scan`, `/healthz`. Reuses `render_report`.
 - `quantumshield/tls_probe.py` — discovery engine 2: live TLS handshake
   probing (`probe` command). Protocol/cipher via the stdlib `ssl` module;
   negotiated key-exchange group (incl. hybrid PQC, e.g. X25519MLKEM768) via a
@@ -42,9 +50,10 @@ PQC migration timelines.
 - `quantumshield/cbom.py` — CycloneDX 1.6 CBOM builder + scoring engine.
 - `quantumshield/report.py` — self-contained HTML report (inline CSS, palette:
   ink #0E1726, bg #F4F7FA, violet #5B4BD4, severity colors in SEV_COLORS).
-- `quantumshield/cli.py` — argparse CLI (subparsers), `scan` and `probe` commands.
-- `tests/test_quantumshield.py`, `tests/test_tls_probe.py`,
-  `tests/test_ast_detect.py` — 67 pytest tests.
+- `quantumshield/cli.py` — argparse CLI (subparsers): `scan`, `probe`, `serve`.
+- `tests/` — `test_quantumshield.py`, `test_tls_probe.py`, `test_ast_detect.py`,
+  `test_js_detect.py`, `test_webapp.py` — 95 pytest tests (JS/web tests skip
+  cleanly when their optional deps are absent).
 
 ## Conventions and invariants
 
@@ -68,11 +77,12 @@ PQC migration timelines.
    (`quantumshield/tls_probe.py`, `probe` CLI command). Verified against
    live targets: hybrid PQC (cloudflare.com, google.com, example.com all
    negotiate X25519MLKEM768) and legacy TLS (badssl.com TLS 1.0/1.1 hosts).
-2. ~~AST-based detection for Python~~ — shipped (`quantumshield/ast_detect.py`).
-   Precise call-site detection via the stdlib `ast` module, import-alias
-   resolution, key sizes / curve names from call args, no comment/string false
-   positives. JS AST was deliberately deferred (needs a non-stdlib parser,
-   which the "stdlib-only core" convention pushes back on) — JS stays on regex.
+2. ~~AST-based detection for Python and JS~~ — shipped. Python via stdlib
+   `ast` (`ast_detect.py`); JS via optional `esprima` (`js_detect.py`, `[js]`
+   extra — kept optional to honour the stdlib-only-core convention). Import-
+   alias resolution, key sizes / curve names from args, no comment/string
+   false positives. TS/JSX not parsed (regex fallback). Also shipped a demo
+   web UI (`webapp.py`, `[web]` extra, `serve` command).
 3. Mosca-inequality migration urgency per asset (user supplies data shelf-life
    and migration time; flag where shelf-life + migration > CRQC estimate).
 4. Lockfile/dependency analysis (map requirements.txt / package-lock.json

@@ -28,8 +28,16 @@ def main(argv=None):
     probe_p.add_argument("--json-only", action="store_true", help="emit CBOM only, skip HTML report")
     probe_p.add_argument("--timeout", type=float, default=5.0, help="per-target timeout in seconds")
 
+    serve_p = sub.add_parser("serve", help="launch the demo web UI (needs quantumshield[web])")
+    serve_p.add_argument("--host", default="127.0.0.1", help="bind host (default: 127.0.0.1)")
+    serve_p.add_argument("--port", type=int, default=8000, help="bind port (default: 8000)")
+
     args = p.parse_args(argv)
-    return _run_scan(args) if args.command == "scan" else _run_probe(args)
+    if args.command == "scan":
+        return _run_scan(args)
+    if args.command == "probe":
+        return _run_probe(args)
+    return _run_serve(args)
 
 
 def _run_scan(args):
@@ -96,6 +104,18 @@ def _run_probe(args):
         else:
             print(f"    {r.target:<28} UNREACHABLE ({r.error})")
     return 1 if score["counts"]["CRITICAL"] else 0
+
+
+def _run_serve(args):
+    try:
+        from .webapp import serve
+    except ImportError:
+        print("error: the web UI needs extra dependencies. Install with:\n"
+              "  pip install \"quantumshield[web]\"", file=sys.stderr)
+        return 2
+    print(f"QuantumShield v{__version__} — serving demo UI at http://{args.host}:{args.port}")
+    serve(host=args.host, port=args.port)
+    return 0
 
 
 if __name__ == "__main__":

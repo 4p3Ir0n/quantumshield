@@ -16,6 +16,7 @@ from .patterns import (ALGORITHMS, PATTERNS, WEAK_PROTOCOLS, CODE_EXTENSIONS,
                        CONFIG_EXTENSIONS, CONFIG_FILENAMES, CERT_EXTENSIONS,
                        SKIP_DIRS, MAX_FILE_BYTES, SEVERITIES)
 from .ast_detect import detect as ast_detect
+from .js_detect import detect as js_detect, HAVE_ESPRIMA
 
 try:
     from cryptography import x509
@@ -114,12 +115,16 @@ class Scanner:
         rel = self._rel(path)
         lines = content.splitlines()
 
-        # Python files that parse cleanly are analysed by AST (precise call-site
-        # detection, no comment/string false positives, key sizes from args).
-        # Everything else — and any .py that fails to parse — uses regex.
+        # Source that parses cleanly is analysed by AST (precise call-site
+        # detection, no comment/string false positives, sizes/params from args):
+        # Python via the stdlib `ast`, JS/.mjs/.cjs via optional `esprima`.
+        # Everything else — and any file that fails to parse — uses regex.
+        low = path.lower()
         used_ast = False
-        if path.lower().endswith(".py"):
+        if low.endswith(".py"):
             used_ast = self._scan_python_ast(content, lines, rel)
+        elif low.endswith((".js", ".mjs", ".cjs")) and HAVE_ESPRIMA:
+            used_ast = self._scan_js_ast(content, lines, rel)
 
         for i, line in enumerate(lines, 1):
             stripped = line.strip()
@@ -162,6 +167,17 @@ class Scanner:
             return False
         for af in ast_findings:
             self._add_algorithm(af.algorithm, Occurrence(rel, af.lineno, af.snippet, af.hint))
+        return True
+
+    def _scan_js_ast(self, content: str, lines: list[str], rel: str) -> bool:
+        """AST-analyse a JS file via esprima. Returns True if it parsed; False
+        if esprima couldn't parse it (caller falls back to regex)."""
+        try:
+            js_findings = js_detect(content, lines)
+        except Exception:  # noqa: BLE001 - any parse failure -> regex fallback
+            return False
+        for jf in js_findings:
+            self._add_algorithm(jf.algorithm, Occurrence(rel, jf.lineno, jf.snippet, jf.hint))
         return True
 
     # ------------------------------------------------------- cert handling

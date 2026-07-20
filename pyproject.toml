@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "quantumshield"
-version = "0.2.0"
+version = "0.3.0"
 description = "Post-quantum cryptographic discovery, CycloneDX 1.6 CBOM generation, and quantum readiness scoring"
 readme = "README.md"
 license = {text = "MIT"}
@@ -21,7 +21,9 @@ dependencies = []
 
 [project.optional-dependencies]
 certs = ["cryptography>=41"]
-dev = ["pytest>=7", "cryptography>=41"]
+js = ["esprima>=4"]
+web = ["fastapi>=0.110", "uvicorn>=0.29"]
+dev = ["pytest>=7", "cryptography>=41", "esprima>=4", "fastapi>=0.110", "httpx>=0.27"]
 
 [project.scripts]
 quantumshield = "quantumshield.cli:main"

@@ -105,7 +105,6 @@ def render_report(findings: list[Finding], target: str, score: dict,
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>QuantumShield report — {html.escape(target)}</title>
-<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700&family=Inter:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>{CSS}</style></head><body>
 <header><div class="wrap">
   <span class="brand">Quantum<span>Shield</span> &middot; crypto discovery report</span>
