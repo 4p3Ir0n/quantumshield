@@ -89,6 +89,13 @@ repo is set up for AI-assisted development with Claude Code.
 - PKCS#8 (`BEGIN PRIVATE KEY`) headers don't reveal the algorithm without
   parsing, so unlabelled private keys aren't attributed (the matching
   certificate usually is).
+- Bare-acronym collisions: some algorithm names double as unrelated business
+  acronyms (e.g. `DES` as a partner/service name in comments or docstrings).
+  Distinguishing these from real cipher usage needs semantic/AST context that
+  regex can't provide reliably — tracked under the AST-based detection
+  roadmap item rather than patched with one-off exclusions that would just
+  trade false positives for false negatives elsewhere. Review evidence lines
+  for any `DES`/`3DES` finding before treating it as a real cipher usage.
 
 ## License
 

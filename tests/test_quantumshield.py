@@ -34,6 +34,27 @@ def test_detects_md5_and_sha1(tmp_path):
     assert {"MD5", "SHA-1"} <= names(f)
 
 
+def test_detects_jwt_rs256_as_rsa(tmp_path):
+    # Algorithm string alone implies RSA signing even with no local keygen
+    # call at this call site (key commonly loaded from a vault/PEM file).
+    f = scan_source(tmp_path, "auth.py",
+                    'return jwt.encode(payload, private_pem, algorithm="RS256")\n')
+    assert "RSA" in names(f)
+
+
+def test_detects_jwt_es256_as_ecdsa(tmp_path):
+    f = scan_source(tmp_path, "auth.js",
+                    "jwt.sign(payload, privateKey, { algorithm: 'ES256' });\n")
+    assert "ECDSA" in names(f)
+
+
+def test_jwt_algorithm_lookalike_not_flagged(tmp_path):
+    # word-boundary guard: a similarly-shaped token that isn't an actual
+    # JWT alg value (e.g. a SKU/model number) must not match.
+    f = scan_source(tmp_path, "a.py", 'model = "PS2560-XL"\n')
+    assert "RSA" not in names(f)
+
+
 def test_detects_ecdh_js(tmp_path):
     f = scan_source(tmp_path, "a.js", "const e = crypto.createECDH('prime256v1');\n")
     assert "ECDH" in names(f)
@@ -69,6 +90,19 @@ def test_lowercase_des_variable_not_flagged(tmp_path):
 def test_description_word_not_flagged_as_des(tmp_path):
     f = scan_source(tmp_path, "a.py", "# des is short for description here\ndes = 1\n")
     assert "DES" not in names(f)
+
+
+def test_negated_cipher_in_suite_string_not_flagged(tmp_path):
+    # `!MD5` (and `!DES`, `!RC4`, ...) in an OpenSSL-style cipher-suite string
+    # *excludes* the weak algorithm; it must not be reported as usage.
+    f = scan_source(tmp_path, "nginx.conf", "ssl_ciphers HIGH:!aNULL:!MD5;\n")
+    assert "MD5" not in names(f)
+
+
+def test_negated_des_in_cipher_suite_not_flagged(tmp_path):
+    f = scan_source(tmp_path, "nginx.conf", "ssl_ciphers HIGH:!aNULL:!DES:!RC4;\n")
+    assert "DES" not in names(f)
+    assert "RC4" not in names(f)
 
 
 def test_skips_node_modules(tmp_path):

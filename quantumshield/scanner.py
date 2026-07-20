@@ -58,6 +58,13 @@ KEY_HEADERS = [("BEGIN RSA PRIVATE KEY", "RSA"),
                ("BEGIN DSA PRIVATE KEY", "DSA")]
 
 
+def _is_negated_cipher_token(line: str, match_start: int) -> bool:
+    """True if the match is a `!`-negated entry in an OpenSSL-style cipher-suite
+    string (e.g. `ssl_ciphers HIGH:!aNULL:!MD5:!DES;`), which *excludes* the
+    algorithm rather than using it."""
+    return match_start > 0 and line[match_start - 1] == "!"
+
+
 class Scanner:
     def __init__(self, root: str):
         self.root = os.path.abspath(root)
@@ -109,7 +116,8 @@ class Scanner:
             if not stripped or len(stripped) > 800:
                 continue
             for algo, rx, hint in PATTERNS:
-                if rx.search(stripped):
+                m = rx.search(stripped)
+                if m and not _is_negated_cipher_token(stripped, m.start()):
                     meta = ALGORITHMS[algo]
                     self._add(
                         f"alg:{algo}",

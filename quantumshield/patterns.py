@@ -117,6 +117,15 @@ PATTERNS = [
      "RSA key generation / encryption"),
     ("RSA", _c(r"BEGIN RSA (PRIVATE|PUBLIC) KEY"), "RSA key material on disk"),
 
+    # --- JWT/JOSE signing algorithm identifiers (RFC 7518) ---
+    # These imply the underlying key type even when there's no local keygen
+    # call at the signing call site (e.g. the private key is loaded from a
+    # vault/PEM file elsewhere).
+    ("RSA", _c(r"\bRS(?:256|384|512)\b|\bPS(?:256|384|512)\b"),
+     "JWT/JOSE RSA-family signing algorithm"),
+    ("ECDSA", _c(r"\bES(?:256K?|384|512)\b"),
+     "JWT/JOSE ECDSA-family signing algorithm"),
+
     # --- ECC family ---
     ("ECDSA", _c(r"\bECDSA\b|ecdsa\.|SigningKey\.generate|signature\.ECDSA|getInstance\(\s*\"(SHA\d+withECDSA|EC)\""),
      "ECDSA signature usage"),
