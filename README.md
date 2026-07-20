@@ -64,6 +64,12 @@ QuantumShield v0.2.0 — probing 2 target(s) ...
   RSA, ECC/ECDSA/ECDH, DH, DSA, MD5, SHA-1, DES/3DES, RC4, Blowfish, AES
   (by key size), SHA-2/SHA-3 family, ChaCha20 — plus **positive detection of
   PQC adoption** (ML-KEM/Kyber, ML-DSA/Dilithium, SLH-DSA/SPHINCS+)
+- **Python via AST** (not regex): Python files are analysed with the stdlib
+  `ast` module, so detection fires only on real call sites — resolved through
+  the file's own import aliases — never on keywords in comments or strings.
+  Key sizes (`rsa.generate_private_key(key_size=3072)`) and EC curve names are
+  read straight from the call arguments. Files that fail to parse fall back to
+  regex.
 - **Config files**: weak TLS protocol versions and cipher suites in nginx,
   Apache, sshd, OpenSSL configs
 - **Certificates & keys**: parses X.509 (PEM/DER) for public key algorithm,
@@ -91,7 +97,7 @@ than a stray import. Grades: A >= 90, B >= 75, C >= 55, D >= 35, else F.
 
 ```bash
 pip install -e ".[dev]"
-pytest          # 44 tests
+pytest          # 67 tests
 ```
 
 Architecture, conventions, and roadmap live in [CLAUDE.md](CLAUDE.md) — the
@@ -101,25 +107,31 @@ repo is set up for AI-assisted development with Claude Code.
 
 - [x] **Engine 2 — network**: live TLS handshake probing (protocol, cipher
       suite, key-exchange group, hybrid PQC detection e.g. X25519MLKEM768)
-- [ ] AST-based detection to cut false positives and capture key sizes
+- [x] AST-based detection (Python) to cut false positives and capture key sizes
 - [ ] Mosca-inequality migration urgency modelling per asset
 - [ ] Dependency/lockfile crypto analysis
 - [ ] Multi-repo tracking and CBOM diffing over time
 
 ## Known limitations
 
-- Regex detection can miss dynamically constructed algorithm names and may
-  flag commented-out code; review evidence lines in the report.
+- Non-Python source is still matched by regex, which can miss dynamically
+  constructed algorithm names and may flag keywords in comments or strings;
+  review evidence lines in the report. Python is analysed by AST and is not
+  subject to this (see below).
+- AST detection (Python) reads key sizes from call arguments only when they're
+  statically visible. An AES key loaded at runtime (e.g. from a KMS/env) can't
+  be sized, so `AESGCM(runtime_key)` is recorded as AES usage but without a
+  key-size severity rather than guessing one. Determinable forms
+  (`AESGCM(AESGCM.generate_key(bit_length=256))`, `AES.new(os.urandom(32), …)`)
+  are sized correctly.
+- Bare-acronym collisions (e.g. `DES` as a partner/service name in a comment):
+  fixed for Python by AST detection, which only inspects real call sites. The
+  same collision can still occur in non-Python source that goes through regex —
+  review evidence lines for any `DES`/`3DES` finding there before treating it
+  as real cipher usage.
 - PKCS#8 (`BEGIN PRIVATE KEY`) headers don't reveal the algorithm without
   parsing, so unlabelled private keys aren't attributed (the matching
   certificate usually is).
-- Bare-acronym collisions: some algorithm names double as unrelated business
-  acronyms (e.g. `DES` as a partner/service name in comments or docstrings).
-  Distinguishing these from real cipher usage needs semantic/AST context that
-  regex can't provide reliably — tracked under the AST-based detection
-  roadmap item rather than patched with one-off exclusions that would just
-  trade false positives for false negatives elsewhere. Review evidence lines
-  for any `DES`/`3DES` finding before treating it as a real cipher usage.
 - `probe`'s key-exchange group detection only works against TLS 1.3 servers.
   For TLS <= 1.2, the negotiated curve/group is carried in the
   `ServerKeyExchange` handshake message rather than a ServerHello extension,

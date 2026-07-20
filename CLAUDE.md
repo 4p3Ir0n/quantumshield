@@ -24,9 +24,16 @@ PQC migration timelines.
 - `quantumshield/patterns.py` — algorithm knowledge base (severity, NIST QSL,
   OID, remediation text) + regex detection patterns. **All detection knowledge
   lives here**; scanner logic stays generic.
-- `quantumshield/scanner.py` — filesystem walk, line-by-line pattern matching,
-  weak-TLS-protocol detection, X.509 parsing (via optional `cryptography`).
-  Produces `Finding` objects (one per unique asset, with `Occurrence` evidence).
+- `quantumshield/ast_detect.py` — AST-based Python detection. `.py` files that
+  parse cleanly are analysed here instead of by regex: precise call-site
+  detection resolved through the file's import aliases, key sizes / EC curve
+  names pulled from call args, no comment/string false positives. Emits
+  `ASTFinding`s that the scanner maps onto the same algorithm knowledge base.
+  Files that fail to parse fall back to regex.
+- `quantumshield/scanner.py` — filesystem walk, per-file detection (AST for
+  parseable Python, regex otherwise), weak-TLS-protocol detection, X.509
+  parsing (via optional `cryptography`). Produces `Finding` objects (one per
+  unique asset, with `Occurrence` evidence).
 - `quantumshield/tls_probe.py` — discovery engine 2: live TLS handshake
   probing (`probe` command). Protocol/cipher via the stdlib `ssl` module;
   negotiated key-exchange group (incl. hybrid PQC, e.g. X25519MLKEM768) via a
@@ -36,7 +43,8 @@ PQC migration timelines.
 - `quantumshield/report.py` — self-contained HTML report (inline CSS, palette:
   ink #0E1726, bg #F4F7FA, violet #5B4BD4, severity colors in SEV_COLORS).
 - `quantumshield/cli.py` — argparse CLI (subparsers), `scan` and `probe` commands.
-- `tests/test_quantumshield.py`, `tests/test_tls_probe.py` — 44 pytest tests.
+- `tests/test_quantumshield.py`, `tests/test_tls_probe.py`,
+  `tests/test_ast_detect.py` — 67 pytest tests.
 
 ## Conventions and invariants
 
@@ -60,8 +68,11 @@ PQC migration timelines.
    (`quantumshield/tls_probe.py`, `probe` CLI command). Verified against
    live targets: hybrid PQC (cloudflare.com, google.com, example.com all
    negotiate X25519MLKEM768) and legacy TLS (badssl.com TLS 1.0/1.1 hosts).
-2. AST-based detection for Python (`ast` module) and JS to reduce regex false
-   positives and capture key sizes from call arguments.
+2. ~~AST-based detection for Python~~ — shipped (`quantumshield/ast_detect.py`).
+   Precise call-site detection via the stdlib `ast` module, import-alias
+   resolution, key sizes / curve names from call args, no comment/string false
+   positives. JS AST was deliberately deferred (needs a non-stdlib parser,
+   which the "stdlib-only core" convention pushes back on) — JS stays on regex.
 3. Mosca-inequality migration urgency per asset (user supplies data shelf-life
    and migration time; flag where shelf-life + migration > CRQC estimate).
 4. Lockfile/dependency analysis (map requirements.txt / package-lock.json

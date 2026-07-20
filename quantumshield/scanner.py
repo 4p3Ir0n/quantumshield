@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from .patterns import (ALGORITHMS, PATTERNS, WEAK_PROTOCOLS, CODE_EXTENSIONS,
                        CONFIG_EXTENSIONS, CONFIG_FILENAMES, CERT_EXTENSIONS,
                        SKIP_DIRS, MAX_FILE_BYTES, SEVERITIES)
+from .ast_detect import detect as ast_detect
 
 try:
     from cryptography import x509
@@ -106,26 +107,29 @@ class Scanner:
     def _scan_text(self, path: str):
         try:
             with open(path, "r", encoding="utf-8", errors="ignore") as fh:
-                lines = fh.readlines()
+                content = fh.read()
         except OSError:
             return
         self.files_scanned += 1
         rel = self._rel(path)
+        lines = content.splitlines()
+
+        # Python files that parse cleanly are analysed by AST (precise call-site
+        # detection, no comment/string false positives, key sizes from args).
+        # Everything else — and any .py that fails to parse — uses regex.
+        used_ast = False
+        if path.lower().endswith(".py"):
+            used_ast = self._scan_python_ast(content, lines, rel)
+
         for i, line in enumerate(lines, 1):
             stripped = line.strip()
             if not stripped or len(stripped) > 800:
                 continue
-            for algo, rx, hint in PATTERNS:
-                m = rx.search(stripped)
-                if m and not _is_negated_cipher_token(stripped, m.start()):
-                    meta = ALGORITHMS[algo]
-                    self._add(
-                        f"alg:{algo}",
-                        dict(algorithm=algo, asset_type="algorithm",
-                             severity=meta["severity"], nist_qsl=meta["nist_qsl"],
-                             primitive=meta["primitive"], note=meta["note"],
-                             oid=meta.get("oid")),
-                        Occurrence(rel, i, stripped[:160], hint))
+            if not used_ast:
+                for algo, rx, hint in PATTERNS:
+                    m = rx.search(stripped)
+                    if m and not _is_negated_cipher_token(stripped, m.start()):
+                        self._add_algorithm(algo, Occurrence(rel, i, stripped[:160], hint))
             m = PROTO_RE.search(stripped)
             if m:
                 proto = m.group(2)
@@ -138,6 +142,27 @@ class Scanner:
                          note=f"{norm} is deprecated. Configure TLS 1.2 minimum and plan "
                               f"TLS 1.3 with hybrid PQC key exchange (X25519MLKEM768)."),
                     Occurrence(rel, i, stripped[:160], "legacy TLS protocol enabled"))
+
+    def _add_algorithm(self, algo: str, occ: Occurrence):
+        meta = ALGORITHMS[algo]
+        self._add(
+            f"alg:{algo}",
+            dict(algorithm=algo, asset_type="algorithm",
+                 severity=meta["severity"], nist_qsl=meta["nist_qsl"],
+                 primitive=meta["primitive"], note=meta["note"], oid=meta.get("oid")),
+            occ)
+
+    def _scan_python_ast(self, content: str, lines: list[str], rel: str) -> bool:
+        """AST-analyse a Python file. Returns True if it parsed (findings, if
+        any, have been recorded); False if it didn't parse and the caller
+        should fall back to regex."""
+        try:
+            ast_findings = ast_detect(content, lines)
+        except (SyntaxError, ValueError):
+            return False
+        for af in ast_findings:
+            self._add_algorithm(af.algorithm, Occurrence(rel, af.lineno, af.snippet, af.hint))
+        return True
 
     # ------------------------------------------------------- cert handling
     def _scan_cert_or_key(self, path: str):
