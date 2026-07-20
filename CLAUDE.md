@@ -70,6 +70,9 @@ PQC migration timelines.
   caught: bare-word DES must be case-sensitive).
 - CBOM must stay valid CycloneDX 1.6; `cryptographic-asset` component type.
 - Run `pytest` before considering any change done. CI: `.github/workflows/ci.yml`.
+- PyPI distribution name is `quantumshield-pqc` (import/CLI stay `quantumshield`);
+  releases publish via trusted publishing on GitHub Release — see `RELEASING.md`.
+  Keep `pyproject.toml` `version` and `__init__.py` `__version__` in lockstep.
 
 ## Roadmap (in priority order)
 

@@ -12,12 +12,20 @@ self-contained HTML report with a 0-100 quantum readiness score.
 ## Quick start
 
 ```bash
-pip install -e ".[certs]"          # add ,js for JavaScript AST, ,web for the demo UI
+pip install quantumshield-pqc          # add [certs], [js], [web], or [all] extras
 quantumshield scan /path/to/repo -o results/
 ```
 
-Optional extras: `certs` (X.509 parsing), `js` (JavaScript AST detection via
-esprima), `web` (the demo web UI). The core is stdlib-only.
+The PyPI distribution is **`quantumshield-pqc`** (the `quantumshield` name was
+already taken); the command and `import quantumshield` are unchanged. Optional
+extras: `certs` (X.509 parsing), `js` (JavaScript AST detection via esprima),
+`web` (the demo web UI). The core is stdlib-only.
+
+From a source checkout for development:
+
+```bash
+pip install -e ".[dev]"
+```
 
 Outputs:
 
