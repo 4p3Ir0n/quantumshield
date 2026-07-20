@@ -60,11 +60,12 @@ footer{margin-top:48px;font-family:var(--mono);font-size:11.5px;color:#8295A8}
 
 
 def render_report(findings: list[Finding], target: str, score: dict,
-                  files_scanned: int, certs_parsed: int) -> str:
+                  files_scanned: int, certs_parsed: int, stats_text: str | None = None) -> str:
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     grade_color = SEV_COLORS["SAFE"] if score["grade"] in "AB" else (
         SEV_COLORS["MEDIUM"] if score["grade"] == "C" else SEV_COLORS["CRITICAL"])
 
+    stats_text = stats_text or f"{files_scanned} files scanned &middot; {certs_parsed} certificates parsed"
     counts = score["counts"]
     total = max(sum(counts.values()), 1)
     spectrum, legend = [], []
@@ -116,7 +117,7 @@ def render_report(findings: list[Finding], target: str, score: dict,
          <div class="score-sub">quantum readiness / 100</div></div>
     <div class="grade" style="color:{grade_color}">{score['grade']}</div>
     <div class="headline">{score['headline']}<br>
-      <span class="meta">{files_scanned} files scanned &middot; {certs_parsed} certificates parsed</span></div>
+      <span class="meta">{stats_text}</span></div>
     <div class="counts">{counts_html}</div>
   </div>
   <h2>Exposure spectrum</h2>

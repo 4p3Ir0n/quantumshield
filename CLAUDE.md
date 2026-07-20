@@ -27,11 +27,16 @@ PQC migration timelines.
 - `quantumshield/scanner.py` — filesystem walk, line-by-line pattern matching,
   weak-TLS-protocol detection, X.509 parsing (via optional `cryptography`).
   Produces `Finding` objects (one per unique asset, with `Occurrence` evidence).
+- `quantumshield/tls_probe.py` — discovery engine 2: live TLS handshake
+  probing (`probe` command). Protocol/cipher via the stdlib `ssl` module;
+  negotiated key-exchange group (incl. hybrid PQC, e.g. X25519MLKEM768) via a
+  hand-rolled TLS 1.3 ClientHello/ServerHello, since `ssl` has no API for
+  that. Produces the same `Finding`/`Occurrence` objects as the scanner.
 - `quantumshield/cbom.py` — CycloneDX 1.6 CBOM builder + scoring engine.
 - `quantumshield/report.py` — self-contained HTML report (inline CSS, palette:
   ink #0E1726, bg #F4F7FA, violet #5B4BD4, severity colors in SEV_COLORS).
-- `quantumshield/cli.py` — argparse CLI, `scan` command.
-- `tests/test_quantumshield.py` — 16 pytest tests.
+- `quantumshield/cli.py` — argparse CLI (subparsers), `scan` and `probe` commands.
+- `tests/test_quantumshield.py`, `tests/test_tls_probe.py` — 44 pytest tests.
 
 ## Conventions and invariants
 
@@ -51,12 +56,10 @@ PQC migration timelines.
 
 ## Roadmap (in priority order)
 
-1. **Engine 2 — network TLS prober** (`quantumshield/tls_probe.py`, new
-   `probe` CLI command): given host:port list, perform TLS handshakes and
-   report negotiated protocol version, cipher suite, key-exchange group;
-   detect hybrid PQC groups (X25519MLKEM768, group id 0x11ec / 4588) via the
-   `ssl` module where possible and raw ClientHello crafting where not.
-   Same CBOM + scoring + report pipeline. Findings as `asset_type="protocol"`.
+1. ~~Engine 2 — network TLS prober~~ — shipped in v0.2.0
+   (`quantumshield/tls_probe.py`, `probe` CLI command). Verified against
+   live targets: hybrid PQC (cloudflare.com, google.com, example.com all
+   negotiate X25519MLKEM768) and legacy TLS (badssl.com TLS 1.0/1.1 hosts).
 2. AST-based detection for Python (`ast` module) and JS to reduce regex false
    positives and capture key sizes from call arguments.
 3. Mosca-inequality migration urgency per asset (user supplies data shelf-life
