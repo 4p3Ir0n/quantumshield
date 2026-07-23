@@ -42,6 +42,66 @@ a quantum-exposure gate:
   run: quantumshield scan . --json-only
 ```
 
+Tune the threshold with `--fail-on {critical,high,medium,low,any,never}`.
+
+### Living with a real repository
+
+A first scan of an established codebase finds years of accumulated crypto, most
+of which won't be fixed this sprint. Three ways to quieten it, in increasing
+precision:
+
+**Baseline** — record what exists today, then gate only on what's *new*. This
+is what lets a team adopt the CI gate without fixing the backlog first:
+
+```bash
+quantumshield scan . --write-baseline .quantumshield-baseline.json   # once, commit it
+quantumshield scan . --baseline .quantumshield-baseline.json         # in CI
+```
+
+Fingerprints ignore line numbers, so a baselined finding stays baselined when
+unrelated edits push it up or down the file.
+
+**`.quantumshieldignore`** — gitignore-style path globs at the scan root, for
+directories that should never be scanned (`!` negation is not supported):
+
+```gitignore
+thirdparty/
+**/generated/**
+*.min.js
+```
+
+**Inline suppressions** — per-line, reviewable in code review, and they travel
+with the code. Any comment syntax works:
+
+```python
+h = hashlib.sha1(data)  # quantumshield: ignore[SHA-1] legacy vendor feed, JIRA-123
+```
+
+`ignore` alone suppresses every finding on the line; `ignore[MD5,SHA-1]` limits
+it to named algorithms. Everything suppressed is counted in the run summary, so
+nothing disappears silently.
+
+### SARIF for code-scanning dashboards
+
+```bash
+quantumshield scan . --sarif        # writes results.sarif alongside the CBOM
+```
+
+SARIF 2.1.0, so findings land in GitHub code scanning (or any SARIF-consuming
+dashboard) with file, line, severity and a stable fingerprint per alert:
+
+```yaml
+- run: quantumshield scan . --sarif --fail-on never
+- uses: github/codeql-action/upload-sarif@v3
+  with:
+    sarif_file: quantumshield-out/results.sarif
+```
+
+SAFE findings are deliberately **not** emitted as SARIF alerts — they're
+positive detections (you already use AES-256 / ML-KEM here), and filing them as
+alerts would raise bugs against correct code. They remain in the CBOM and HTML
+report.
+
 Try it on the included fixture:
 
 ```bash
@@ -124,7 +184,7 @@ than a stray import. Grades: A >= 90, B >= 75, C >= 55, D >= 35, else F.
 
 ```bash
 pip install -e ".[dev]"
-pytest          # 95 tests
+pytest          # 166 tests
 ```
 
 Architecture, conventions, and roadmap live in [CLAUDE.md](CLAUDE.md) — the

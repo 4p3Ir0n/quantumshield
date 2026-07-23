@@ -20,6 +20,15 @@ def main(argv=None):
     scan_p.add_argument("-o", "--output", default="quantumshield-out",
                         help="output directory (default: quantumshield-out)")
     scan_p.add_argument("--json-only", action="store_true", help="emit CBOM only, skip HTML report")
+    scan_p.add_argument("--sarif", action="store_true",
+                        help="also emit results.sarif (SARIF 2.1.0) for code-scanning dashboards")
+    scan_p.add_argument("--baseline", metavar="FILE",
+                        help="report only findings absent from this baseline file")
+    scan_p.add_argument("--write-baseline", metavar="FILE",
+                        help="write current findings to a baseline file and exit 0")
+    scan_p.add_argument("--fail-on", default="critical",
+                        choices=["critical", "high", "medium", "low", "any", "never"],
+                        help="minimum severity that makes the run exit 1 (default: critical)")
 
     probe_p = sub.add_parser("probe", help="live TLS handshake probe of host:port targets")
     probe_p.add_argument("targets", nargs="+", help="one or more host:port targets to probe")
@@ -40,7 +49,23 @@ def main(argv=None):
     return _run_serve(args)
 
 
+FAIL_ON_ORDER = ["CRITICAL", "HIGH", "MEDIUM", "LOW"]
+
+
+def _should_fail(counts: dict, fail_on: str) -> bool:
+    """True if any finding is at or above the configured severity floor."""
+    if fail_on == "never":
+        return False
+    if fail_on == "any":
+        return any(counts.get(s, 0) for s in FAIL_ON_ORDER)
+    floor = FAIL_ON_ORDER.index(fail_on.upper())
+    return any(counts.get(s, 0) for s in FAIL_ON_ORDER[:floor + 1])
+
+
 def _run_scan(args):
+    from .suppress import (load_baseline, apply_baseline, write_baseline,
+                           self_artifact_patterns)
+
     if not os.path.isdir(args.path):
         print(f"error: {args.path} is not a directory", file=sys.stderr)
         return 2
@@ -48,13 +73,39 @@ def _run_scan(args):
     target = os.path.basename(os.path.abspath(args.path))
     print(f"QuantumShield v{__version__} — scanning {args.path} ...")
     scanner = Scanner(args.path)
+    # Never scan our own output or baseline files if they sit inside the tree.
+    for pattern in self_artifact_patterns(args.path, args.output, args.baseline,
+                                          args.write_baseline):
+        scanner.ignore.add(pattern)
     findings = scanner.scan()
+
+    # Writing a baseline is a bookkeeping run: record today's findings and stop
+    # without gating, so a team can adopt the CI gate before fixing the backlog.
+    if args.write_baseline:
+        n = write_baseline(findings, args.write_baseline, __version__)
+        print(f"  Baseline -> {args.write_baseline} ({n} occurrences recorded)")
+        return 0
+
+    baselined = 0
+    if args.baseline:
+        try:
+            known = load_baseline(args.baseline)
+        except (OSError, ValueError) as exc:
+            print(f"error: could not read baseline: {exc}", file=sys.stderr)
+            return 2
+        findings, baselined = apply_baseline(findings, known)
+
     score = score_findings(findings)
 
     os.makedirs(args.output, exist_ok=True)
     cbom_path = os.path.join(args.output, "cbom.cdx.json")
     write_json(build_cbom(findings, target, score), cbom_path)
     print(f"  CBOM     -> {cbom_path}")
+    if args.sarif:
+        from .sarif import write_sarif
+        sarif_path = os.path.join(args.output, "results.sarif")
+        write_sarif(findings, sarif_path, target)
+        print(f"  SARIF    -> {sarif_path}")
     if not args.json_only:
         report_path = os.path.join(args.output, "report.html")
         with open(report_path, "w", encoding="utf-8") as fh:
@@ -63,11 +114,26 @@ def _run_scan(args):
         print(f"  Report   -> {report_path}")
 
     print(f"\n  Files scanned: {scanner.files_scanned} | certificates parsed: {scanner.certs_parsed}")
-    print(f"  Quantum readiness: {score['score']}/100 (grade {score['grade']})")
+    quiet = []
+    if scanner.files_ignored or scanner.dirs_ignored:
+        parts = []
+        if scanner.dirs_ignored:
+            parts.append(f"{scanner.dirs_ignored} dirs")
+        if scanner.files_ignored:
+            parts.append(f"{scanner.files_ignored} files")
+        quiet.append(f"{' + '.join(parts)} ignored")
+    if scanner.suppressed_inline:
+        quiet.append(f"{scanner.suppressed_inline} inline-suppressed")
+    if baselined:
+        quiet.append(f"{baselined} baselined")
+    if quiet:
+        print(f"  Suppressed: {' | '.join(quiet)}")
+    label = " (new findings only)" if args.baseline else ""
+    print(f"  Quantum readiness: {score['score']}/100 (grade {score['grade']}){label}")
     for sev, n in score["counts"].items():
         if n:
             print(f"    {sev:<8} {n}")
-    return 1 if score["counts"]["CRITICAL"] else 0
+    return 1 if _should_fail(score["counts"], args.fail_on) else 0
 
 
 def _run_probe(args):

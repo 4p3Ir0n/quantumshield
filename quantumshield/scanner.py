@@ -17,6 +17,7 @@ from .patterns import (ALGORITHMS, PATTERNS, WEAK_PROTOCOLS, CODE_EXTENSIONS,
                        SKIP_DIRS, MAX_FILE_BYTES, SEVERITIES)
 from .ast_detect import detect as ast_detect
 from .js_detect import detect as js_detect, HAVE_ESPRIMA
+from .suppress import IgnoreRules, is_suppressed
 
 try:
     from cryptography import x509
@@ -68,18 +69,37 @@ def _is_negated_cipher_token(line: str, match_start: int) -> bool:
 
 
 class Scanner:
-    def __init__(self, root: str):
+    def __init__(self, root: str, ignore: IgnoreRules | None = None):
         self.root = os.path.abspath(root)
         self.findings: dict[str, Finding] = {}
         self.files_scanned = 0
         self.certs_parsed = 0
+        self.files_ignored = 0
+        self.dirs_ignored = 0
+        self.suppressed_inline = 0
+        # An explicit IgnoreRules wins; otherwise pick up .quantumshieldignore
+        # from the scan root if one is there.
+        self.ignore = ignore if ignore is not None else IgnoreRules.load(self.root)
 
     # ------------------------------------------------------------------ API
     def scan(self) -> list[Finding]:
         for dirpath, dirnames, filenames in os.walk(self.root):
-            dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
+            keep = []
+            for d in dirnames:
+                if d in SKIP_DIRS:
+                    continue
+                if self.ignore.matches(self._rel(os.path.join(dirpath, d))):
+                    # Pruned here rather than walked-and-skipped, so count the
+                    # directory — otherwise its files vanish from the summary.
+                    self.dirs_ignored += 1
+                    continue
+                keep.append(d)
+            dirnames[:] = keep
             for fn in filenames:
                 full = os.path.join(dirpath, fn)
+                if self.ignore.matches(self._rel(full)):
+                    self.files_ignored += 1
+                    continue
                 try:
                     if os.path.getsize(full) > MAX_FILE_BYTES:
                         continue
@@ -134,11 +154,13 @@ class Scanner:
                 for algo, rx, hint in PATTERNS:
                     m = rx.search(stripped)
                     if m and not _is_negated_cipher_token(stripped, m.start()):
-                        self._add_algorithm(algo, Occurrence(rel, i, stripped[:160], hint))
+                        self._add_algorithm(algo, Occurrence(rel, i, stripped[:160], hint), lines)
             m = PROTO_RE.search(stripped)
             if m:
                 proto = m.group(2)
                 norm = "TLSv1.0" if proto.lower() in ("tlsv1", "tlsv1.0") else proto
+                if self._inline_suppressed(norm, i, lines):
+                    continue
                 sev = WEAK_PROTOCOLS.get(norm, "HIGH")
                 self._add(
                     f"proto:{norm}",
@@ -148,7 +170,19 @@ class Scanner:
                               f"TLS 1.3 with hybrid PQC key exchange (X25519MLKEM768)."),
                     Occurrence(rel, i, stripped[:160], "legacy TLS protocol enabled"))
 
-    def _add_algorithm(self, algo: str, occ: Occurrence):
+    def _inline_suppressed(self, algo: str, lineno: int, lines: list[str] | None) -> bool:
+        """Check the *full* source line (not the truncated snippet) for a
+        `quantumshield: ignore` marker covering this algorithm."""
+        if not lines or not (1 <= lineno <= len(lines)):
+            return False
+        if is_suppressed(lines[lineno - 1], algo):
+            self.suppressed_inline += 1
+            return True
+        return False
+
+    def _add_algorithm(self, algo: str, occ: Occurrence, lines: list[str] | None = None):
+        if self._inline_suppressed(algo, occ.line, lines):
+            return
         meta = ALGORITHMS[algo]
         self._add(
             f"alg:{algo}",
@@ -166,7 +200,7 @@ class Scanner:
         except (SyntaxError, ValueError):
             return False
         for af in ast_findings:
-            self._add_algorithm(af.algorithm, Occurrence(rel, af.lineno, af.snippet, af.hint))
+            self._add_algorithm(af.algorithm, Occurrence(rel, af.lineno, af.snippet, af.hint), lines)
         return True
 
     def _scan_js_ast(self, content: str, lines: list[str], rel: str) -> bool:
@@ -177,7 +211,7 @@ class Scanner:
         except Exception:  # noqa: BLE001 - any parse failure -> regex fallback
             return False
         for jf in js_findings:
-            self._add_algorithm(jf.algorithm, Occurrence(rel, jf.lineno, jf.snippet, jf.hint))
+            self._add_algorithm(jf.algorithm, Occurrence(rel, jf.lineno, jf.snippet, jf.hint), lines)
         return True
 
     # ------------------------------------------------------- cert handling

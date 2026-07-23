@@ -47,13 +47,22 @@ PQC migration timelines.
   negotiated key-exchange group (incl. hybrid PQC, e.g. X25519MLKEM768) via a
   hand-rolled TLS 1.3 ClientHello/ServerHello, since `ssl` has no API for
   that. Produces the same `Finding`/`Occurrence` objects as the scanner.
+- `quantumshield/suppress.py` — noise control: `.quantumshieldignore` globs,
+  inline `quantumshield: ignore[ALGO] reason` comments, line-number-independent
+  fingerprints, and baseline write/load/apply. `DEFAULT_IGNORE_PATTERNS` stops
+  the scanner reading its own CBOM/SARIF/baseline artifacts (they name
+  algorithms in plain text, so scanning them re-reports everything).
+- `quantumshield/sarif.py` — SARIF 2.1.0 export. One rule per algorithm, one
+  result per occurrence, severity → level + `security-severity`. SAFE findings
+  are intentionally excluded (positive detections aren't alerts).
 - `quantumshield/cbom.py` — CycloneDX 1.6 CBOM builder + scoring engine.
 - `quantumshield/report.py` — self-contained HTML report (inline CSS, palette:
   ink #0E1726, bg #F4F7FA, violet #5B4BD4, severity colors in SEV_COLORS).
 - `quantumshield/cli.py` — argparse CLI (subparsers): `scan`, `probe`, `serve`.
 - `tests/` — `test_quantumshield.py`, `test_tls_probe.py`, `test_ast_detect.py`,
-  `test_js_detect.py`, `test_webapp.py` — 95 pytest tests (JS/web tests skip
-  cleanly when their optional deps are absent).
+  `test_js_detect.py`, `test_webapp.py`, `test_suppress.py`, `test_sarif.py`,
+  `test_cli_gating.py` — 166 pytest tests (JS/web tests skip cleanly when their
+  optional deps are absent).
 
 ## Conventions and invariants
 
