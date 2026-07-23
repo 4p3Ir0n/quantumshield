@@ -121,7 +121,7 @@ quantumshield probe example.com:443 legacy-host:443 -o probe-results/
 ```
 
 ```
-QuantumShield v0.3.0 — probing 2 target(s) ...
+QuantumShield v0.4.0 — probing 2 target(s) ...
   Targets probed: 2 | reachable: 2
   Quantum readiness: 92/100 (grade A)
     HIGH     1

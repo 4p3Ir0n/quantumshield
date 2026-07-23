@@ -31,15 +31,18 @@ each publish.)
 
 ## Cutting a release
 
+> **For the first release:** the repo is already at **0.4.0** and has never been
+> published, so step 1 is done — start at step 3 and tag `v0.4.0`.
+
 1. Bump the version in **two** places (they must match):
    - `pyproject.toml` → `version`
    - `quantumshield/__init__.py` → `__version__`
 2. Update `README.md` / `CLAUDE.md` if the change warrants it, commit, and push.
 3. Tag and create a GitHub Release:
    ```bash
-   git tag v0.3.0
-   git push origin v0.3.0
-   gh release create v0.3.0 --title "v0.3.0" --notes "…release notes…"
+   git tag v0.4.0
+   git push origin v0.4.0
+   gh release create v0.4.0 --title "v0.4.0" --notes "…release notes…"
    ```
 4. Publishing the release triggers `publish.yml`, which builds the sdist +
    wheel, runs `twine check`, and uploads to PyPI via OIDC.
