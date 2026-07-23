@@ -21,12 +21,17 @@ def build_cbom(findings: list[Finding], target: str, score: dict) -> dict:
     ts = datetime.now(timezone.utc).isoformat(timespec="seconds")
     components = []
     for f in findings:
-        ref = f"crypto/{f.asset_type}/{f.algorithm.replace(' ', '-')}-{uuid.uuid4().hex[:8]}"
+        # CycloneDX 1.6 only allows algorithm / certificate / protocol /
+        # related-crypto-material as assetType. A dependency-derived finding is
+        # still an algorithm asset — the *evidence* is what differs — so it maps
+        # to "algorithm" and records its provenance in a property instead.
+        asset_type = "algorithm" if f.asset_type == "dependency" else f.asset_type
+        ref = f"crypto/{asset_type}/{f.algorithm.replace(' ', '-')}-{uuid.uuid4().hex[:8]}"
         comp = {
             "type": "cryptographic-asset",
             "bom-ref": ref,
             "name": f.algorithm,
-            "cryptoProperties": {"assetType": f.asset_type},
+            "cryptoProperties": {"assetType": asset_type},
             "evidence": {
                 "occurrences": [
                     {"location": o.path, "line": o.line, "additionalContext": o.hint}
@@ -36,11 +41,13 @@ def build_cbom(findings: list[Finding], target: str, score: dict) -> dict:
             "properties": [
                 {"name": "quantumshield:severity", "value": f.severity},
                 {"name": "quantumshield:recommendation", "value": f.note},
+                {"name": "quantumshield:evidenceType",
+                 "value": "dependency" if f.asset_type == "dependency" else "code"},
             ],
         }
         if f.oid:
             comp["cryptoProperties"]["oid"] = f.oid
-        if f.asset_type == "algorithm":
+        if asset_type == "algorithm":
             comp["cryptoProperties"]["algorithmProperties"] = {
                 "primitive": PRIMITIVE_MAP.get(f.primitive, "other"),
                 "executionEnvironment": "software-plain-ram",

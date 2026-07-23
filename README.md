@@ -81,6 +81,34 @@ h = hashlib.sha1(data)  # quantumshield: ignore[SHA-1] legacy vendor feed, JIRA-
 it to named algorithms. Everything suppressed is counted in the run summary, so
 nothing disappears silently.
 
+### Dependencies are evidence, not proof
+
+A lockfile is a dependency graph, not code. Scanning one with code patterns
+reports package *names* as call sites — a transitive package called
+`ecdsa-sig-formatter` becomes "CRITICAL ECDSA signature usage", and
+`"md5": "^2.3.0"` becomes "HIGH MD5 hashing". Neither is true, and a CRITICAL
+that traces to a dependency name is how a scanner loses a security team's
+trust.
+
+So lockfiles are parsed structurally, and dependency findings are **capped**:
+direct dependencies at MEDIUM, transitive ones at LOW. A dependency can never
+fail a CI gate on its own — pulling in a library that *can* do MD5 says nothing
+about whether your code calls it. Findings are labelled accordingly:
+
+```
+[LOW] ECDSA (dependency)
+    package-lock.json:1 -> transitive dependency ecdsa-sig-formatter@1.0.11
+    Transitive dependency on ecdsa-sig-formatter can perform ECDSA. A declared
+    dependency is not proof of use — confirm at the call sites before treating
+    this as exposure.
+```
+
+The cap only ever makes findings *less* severe, so PQC adoption found in a
+manifest (`liboqs-python`, `kyber`) still reports as SAFE. Broad libraries that
+can do anything — `cryptography`, `openssl`, `node-forge`, `jsonwebtoken` — are
+deliberately **not** mapped to a single algorithm, since that would recreate the
+noise this exists to remove.
+
 ### SARIF for code-scanning dashboards
 
 ```bash
@@ -121,7 +149,7 @@ quantumshield probe example.com:443 legacy-host:443 -o probe-results/
 ```
 
 ```
-QuantumShield v0.4.0 — probing 2 target(s) ...
+QuantumShield v0.5.0 — probing 2 target(s) ...
   Targets probed: 2 | reachable: 2
   Quantum readiness: 92/100 (grade A)
     HIGH     1
@@ -165,6 +193,10 @@ Routes: `/` (scan form + embedded report), `/report?path=…` (the HTML report),
 - **Live TLS handshakes** (`probe`): negotiated protocol version, cipher
   suite, and — for TLS 1.3 — key-exchange group, including hybrid PQC groups
   (`X25519MLKEM768`, IANA group id `0x11ec`/4588)
+- **Lockfiles and manifests** (`package-lock.json`, `package.json`,
+  `yarn.lock`, `requirements.txt`, `Pipfile.lock`, `poetry.lock`,
+  `Cargo.lock`, `go.sum`/`go.mod`, `Gemfile.lock`, `composer.lock`): parsed as
+  dependency graphs, distinguishing direct from transitive
 
 ## Severity model
 
@@ -184,7 +216,7 @@ than a stray import. Grades: A >= 90, B >= 75, C >= 55, D >= 35, else F.
 
 ```bash
 pip install -e ".[dev]"
-pytest          # 166 tests
+pytest          # 189 tests
 ```
 
 Architecture, conventions, and roadmap live in [CLAUDE.md](CLAUDE.md) — the
@@ -196,7 +228,7 @@ repo is set up for AI-assisted development with Claude Code.
       suite, key-exchange group, hybrid PQC detection e.g. X25519MLKEM768)
 - [x] AST-based detection (Python + JavaScript) to cut false positives and capture key sizes
 - [ ] Mosca-inequality migration urgency modelling per asset
-- [ ] Dependency/lockfile crypto analysis
+- [x] Dependency/lockfile crypto analysis
 - [ ] Multi-repo tracking and CBOM diffing over time
 
 ## Known limitations

@@ -18,6 +18,7 @@ from .patterns import (ALGORITHMS, PATTERNS, WEAK_PROTOCOLS, CODE_EXTENSIONS,
 from .ast_detect import detect as ast_detect
 from .js_detect import detect as js_detect, HAVE_ESPRIMA
 from .suppress import IgnoreRules, is_suppressed
+from .deps import detect as dep_detect, is_lockfile
 
 try:
     from cryptography import x509
@@ -77,6 +78,7 @@ class Scanner:
         self.files_ignored = 0
         self.dirs_ignored = 0
         self.suppressed_inline = 0
+        self.dependencies_found = 0
         # An explicit IgnoreRules wins; otherwise pick up .quantumshieldignore
         # from the scan root if one is there.
         self.ignore = ignore if ignore is not None else IgnoreRules.load(self.root)
@@ -108,7 +110,8 @@ class Scanner:
                 ext = os.path.splitext(fn)[1].lower()
                 if ext in CERT_EXTENSIONS:
                     self._scan_cert_or_key(full)
-                elif ext in CODE_EXTENSIONS or ext in CONFIG_EXTENSIONS or fn in CONFIG_FILENAMES:
+                elif (ext in CODE_EXTENSIONS or ext in CONFIG_EXTENSIONS
+                        or fn in CONFIG_FILENAMES or is_lockfile(fn)):
                     self._scan_text(full)
         return sorted(self.findings.values(),
                       key=lambda f: (SEVERITIES.index(f.severity), f.algorithm))
@@ -135,6 +138,13 @@ class Scanner:
         rel = self._rel(path)
         lines = content.splitlines()
 
+        # Lockfiles and manifests are dependency graphs, not code. Running the
+        # code regexes over them reports package *names* as call sites, so they
+        # are parsed structurally instead and never fall through to regex.
+        if is_lockfile(path):
+            self._scan_lockfile(content, lines, rel, path)
+            return
+
         # Source that parses cleanly is analysed by AST (precise call-site
         # detection, no comment/string false positives, sizes/params from args):
         # Python via the stdlib `ast`, JS/.mjs/.cjs via optional `esprima`.
@@ -146,11 +156,17 @@ class Scanner:
         elif low.endswith((".js", ".mjs", ".cjs")) and HAVE_ESPRIMA:
             used_ast = self._scan_js_ast(content, lines, rel)
 
+        # In structured data, an algorithm name is a *value* ("encryption":
+        # "AES-128"), not a call — indistinguishable from a description of
+        # someone else's crypto. Protocol directives below still apply, since
+        # those key off specific config keywords rather than a bare name.
+        data_file = low.endswith(".json") and not used_ast
+
         for i, line in enumerate(lines, 1):
             stripped = line.strip()
             if not stripped or len(stripped) > 800:
                 continue
-            if not used_ast:
+            if not used_ast and not data_file:
                 for algo, rx, hint in PATTERNS:
                     m = rx.search(stripped)
                     if m and not _is_negated_cipher_token(stripped, m.start()):
@@ -190,6 +206,21 @@ class Scanner:
                  severity=meta["severity"], nist_qsl=meta["nist_qsl"],
                  primitive=meta["primitive"], note=meta["note"], oid=meta.get("oid")),
             occ)
+
+    def _scan_lockfile(self, content: str, lines: list[str], rel: str, path: str):
+        """Parse a lockfile/manifest as a dependency graph. Findings are capped
+        below CRITICAL (see deps.py) so a dependency name can never fail a
+        build the way `ecdsa-sig-formatter` once did."""
+        for df in dep_detect(path, content):
+            if self._inline_suppressed(df.algorithm, df.line, lines):
+                continue
+            self.dependencies_found += 1
+            self._add(
+                f"dep:{df.algorithm}:{df.package}",
+                dict(algorithm=f"{df.algorithm} (dependency)", asset_type="dependency",
+                     severity=df.severity, nist_qsl=df.nist_qsl,
+                     primitive=df.primitive, note=df.note, oid=df.oid),
+                Occurrence(rel, df.line, df.snippet, df.hint))
 
     def _scan_python_ast(self, content: str, lines: list[str], rel: str) -> bool:
         """AST-analyse a Python file. Returns True if it parsed (findings, if

@@ -12,7 +12,8 @@ codebase/filesystem for cryptographic usage, parses X.509 certificates, emits a
 produces a 0–100 **quantum readiness score** plus a self-contained HTML report.
 Exit code 1 on CRITICAL findings makes it a CI quantum-exposure gate.
 
-It is v0.1 (discovery engine 1 of 4) of a larger product vision: a PQC agility
+It is v0.5 (discovery engines 1-2 of 4, published to PyPI as `quantumshield-pqc`)
+of a larger product vision: a PQC agility
 platform (part of the owner's "Ketsig" product family, alongside OT-PQC Scout,
 a pcap-based OT/ICS quantum readiness scanner). Target audience: security
 engineering teams starting PQC migration; near-term goal is design-partner
@@ -47,6 +48,13 @@ PQC migration timelines.
   negotiated key-exchange group (incl. hybrid PQC, e.g. X25519MLKEM768) via a
   hand-rolled TLS 1.3 ClientHello/ServerHello, since `ssl` has no API for
   that. Produces the same `Finding`/`Occurrence` objects as the scanner.
+- `quantumshield/deps.py` — lockfile/manifest analysis (roadmap item 4). Parses
+  the common lockfiles as dependency graphs and maps a *curated* package list
+  onto the algorithm KB. Findings are `asset_type="dependency"` and severity-
+  capped (direct → MEDIUM, transitive → LOW) so a package name can never
+  produce a CRITICAL; the cap is a max-of-indices so SAFE is never downgraded.
+  Broad libraries (`cryptography`, `node-forge`, `jsonwebtoken`) are
+  intentionally unmapped — mapping them to one algorithm recreates the noise.
 - `quantumshield/suppress.py` — noise control: `.quantumshieldignore` globs,
   inline `quantumshield: ignore[ALGO] reason` comments, line-number-independent
   fingerprints, and baseline write/load/apply. `DEFAULT_IGNORE_PATTERNS` stops
@@ -61,7 +69,7 @@ PQC migration timelines.
 - `quantumshield/cli.py` — argparse CLI (subparsers): `scan`, `probe`, `serve`.
 - `tests/` — `test_quantumshield.py`, `test_tls_probe.py`, `test_ast_detect.py`,
   `test_js_detect.py`, `test_webapp.py`, `test_suppress.py`, `test_sarif.py`,
-  `test_cli_gating.py` — 166 pytest tests (JS/web tests skip cleanly when their
+  `test_cli_gating.py`, `test_deps.py` — 189 pytest tests (JS/web tests skip cleanly when their
   optional deps are absent).
 
 ## Conventions and invariants
@@ -97,8 +105,10 @@ PQC migration timelines.
    web UI (`webapp.py`, `[web]` extra, `serve` command).
 3. Mosca-inequality migration urgency per asset (user supplies data shelf-life
    and migration time; flag where shelf-life + migration > CRQC estimate).
-4. Lockfile/dependency analysis (map requirements.txt / package-lock.json
-   crypto libraries to known primitives).
+4. ~~Lockfile/dependency analysis~~ — shipped in v0.5.0 (`deps.py`). Prompted by
+   dogfooding: scanning a real project reported a transitive
+   `ecdsa-sig-formatter` as CRITICAL. Lockfiles are now parsed as dependency
+   graphs with capped severity rather than regex-matched as code.
 5. SaaS layer (multi-repo tracking, CBOM diffing over time) — design-partner
    validation FIRST, do not build speculatively.
 

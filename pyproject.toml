@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 # Distribution name is quantumshield-pqc because `quantumshield` is taken on
 # PyPI by an unrelated project. The import package and CLI remain `quantumshield`.
 name = "quantumshield-pqc"
-version = "0.4.0"
+version = "0.5.0"
 description = "Post-quantum cryptographic discovery, CycloneDX 1.6 CBOM generation, and quantum readiness scoring"
 readme = "README.md"
 license = "MIT"
