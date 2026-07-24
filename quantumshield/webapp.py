@@ -230,12 +230,14 @@ def serve(host: str = "127.0.0.1", port: int = 8000, root: str | None = None,
     no authentication, so binding it to 0.0.0.0 by accident should not be one
     keystroke away.
     """
-    import uvicorn
-
+    # Validate before importing the server: the bind guard must not depend on
+    # an optional dependency being importable.
     resolved_root = configure(root)
     if not is_local_host(host) and not allow_remote:
         raise PermissionError(
             f"refusing to bind {host}: the web UI is unauthenticated and reads "
             f"files under {resolved_root}. Re-run with --allow-remote if you "
             f"really intend to expose it.")
+
+    import uvicorn
     uvicorn.run(app, host=host, port=port)
