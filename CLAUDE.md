@@ -69,7 +69,7 @@ PQC migration timelines.
 - `quantumshield/cli.py` — argparse CLI (subparsers): `scan`, `probe`, `serve`.
 - `tests/` — `test_quantumshield.py`, `test_tls_probe.py`, `test_ast_detect.py`,
   `test_js_detect.py`, `test_webapp.py`, `test_suppress.py`, `test_sarif.py`,
-  `test_cli_gating.py`, `test_deps.py` — 189 pytest tests (JS/web tests skip cleanly when their
+  `test_cli_gating.py`, `test_deps.py`, `test_webapp_security.py` — 210 pytest tests (JS/web tests skip cleanly when their
   optional deps are absent).
 
 ## Conventions and invariants

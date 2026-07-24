@@ -165,11 +165,19 @@ extra.
 
 ```bash
 pip install -e ".[web]"
-quantumshield serve            # http://127.0.0.1:8000
+quantumshield serve                      # http://127.0.0.1:8000, scans confined to cwd
+quantumshield serve --root /path/to/code # confine scans elsewhere
 ```
 
 Routes: `/` (scan form + embedded report), `/report?path=…` (the HTML report),
 `/api/scan?path=…` (raw CycloneDX 1.6 CBOM as JSON), `/healthz`.
+
+> **This is a local demo surface, not a service.** It has no authentication and
+> returns source-line snippets, so two limits are enforced in code: requested
+> paths are confined to `--root` (default: the working directory, with `..` and
+> symlink escapes rejected), and it refuses to bind a non-loopback interface
+> without `--allow-remote`. Don't expose it to a network you don't control —
+> see [SECURITY.md](SECURITY.md).
 
 ## What it detects
 
@@ -216,7 +224,7 @@ than a stray import. Grades: A >= 90, B >= 75, C >= 55, D >= 35, else F.
 
 ```bash
 pip install -e ".[dev]"
-pytest          # 189 tests
+pytest          # 210 tests
 ```
 
 Architecture, conventions, and roadmap live in [CLAUDE.md](CLAUDE.md) — the

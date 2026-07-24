@@ -64,4 +64,5 @@ def test_index_with_go_embeds_report_iframe():
 def test_index_with_bad_path_shows_error():
     r = client.get("/", params={"path": "not-a-real-dir", "go": "1"})
     assert r.status_code == 200
-    assert "Not a directory" in r.text
+    # Wording comes from the path-confinement check (see test_webapp_security).
+    assert "server root" in r.text

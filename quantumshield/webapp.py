@@ -2,9 +2,19 @@
 
 A thin FastAPI wrapper around the scanner so the tool can be demonstrated in a
 browser: point it at a repo path, it runs a real scan and renders the same
-CBOM/score/report the CLI produces. This is a demonstration surface, not a
-multi-tenant service — it scans local filesystem paths and binds to localhost
-by default. Optional dependency: `pip install "quantumshield[web]"`.
+CBOM/score/report the CLI produces. Optional dependency:
+`pip install "quantumshield[web]"`.
+
+**This is a local demonstration surface, not a multi-tenant service.** It reads
+the filesystem and returns source-line snippets, so two controls are enforced
+rather than merely documented:
+
+* Every requested path is confined to a **root** (default: the working
+  directory). Paths outside it are refused, and resolution happens through
+  `os.path.realpath` so `..` traversal and symlinks out of the root are caught.
+* It binds to **127.0.0.1** and refuses any other interface unless started
+  with `--allow-remote`, because exposing an unauthenticated endpoint that
+  reads arbitrary files is a bad afternoon for whoever does it.
 
 Run with `quantumshield serve` (or `uvicorn quantumshield.webapp:app`).
 """
@@ -24,12 +34,57 @@ from .report import render_report
 
 app = FastAPI(title="QuantumShield", version=__version__)
 
+# Scans are confined to this directory. Set via configure(); defaults to cwd so
+# importing the app directly (e.g. `uvicorn quantumshield.webapp:app`) is still
+# confined rather than wide open.
+_ROOT = os.path.realpath(os.getcwd())
+
+
+class PathNotAllowed(Exception):
+    """A requested path is outside the configured root, or isn't a directory."""
+
+
+def configure(root: str | None = None) -> str:
+    """Set the directory scans are confined to. Returns the resolved root."""
+    global _ROOT
+    _ROOT = os.path.realpath(root or os.getcwd())
+    return _ROOT
+
+
+def current_root() -> str:
+    return _ROOT
+
+
+def resolve_path(path: str) -> str:
+    """Resolve a user-supplied path and confine it to the root.
+
+    A single error for both "outside the root" and "not a directory" keeps the
+    endpoint from doubling as an existence oracle for paths it won't serve.
+    """
+    root = os.path.realpath(_ROOT)
+    raw = path or "."
+    candidate = raw if os.path.isabs(raw) else os.path.join(root, raw)
+    target = os.path.realpath(candidate)
+    try:
+        inside = os.path.commonpath([root, target]) == root
+    except ValueError:
+        inside = False          # different drives on Windows
+    if not inside or not os.path.isdir(target):
+        raise PathNotAllowed(
+            f"path must be an existing directory inside the server root ({root})")
+    return target
+
 
 def _demo_path() -> str:
-    """Absolute path to the bundled vulnerable-demo fixture, if present."""
+    """Bundled vulnerable-demo fixture, but only if it's inside the root."""
     repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     candidate = os.path.join(repo_root, "examples", "vulnerable-demo")
-    return candidate if os.path.isdir(candidate) else ""
+    if not os.path.isdir(candidate):
+        return ""
+    try:
+        return resolve_path(candidate)
+    except PathNotAllowed:
+        return ""
 
 
 def _run_scan(path: str):
@@ -121,24 +176,30 @@ def index(path: str = "", go: str = ""):
         return _landing(_demo_path())
     if not go:
         return _landing(path)
-    if not os.path.isdir(path):
-        return _landing(path, error=f"Not a directory: {path}")
+    try:
+        resolve_path(path)
+    except PathNotAllowed as exc:
+        return _landing(path, error=str(exc))
     return _landing(path, show_report_for=path)
 
 
 @app.get("/report", response_class=HTMLResponse)
 def report(path: str = Query(...)):
-    if not os.path.isdir(path):
-        return HTMLResponse(f"<p>Not a directory: {html.escape(path)}</p>", status_code=400)
-    scanner, findings, score, target, _ = _run_scan(path)
+    try:
+        safe = resolve_path(path)
+    except PathNotAllowed as exc:
+        return HTMLResponse(f"<p>{html.escape(str(exc))}</p>", status_code=400)
+    scanner, findings, score, target, _ = _run_scan(safe)
     return render_report(findings, target, score, scanner.files_scanned, scanner.certs_parsed)
 
 
 @app.get("/api/scan")
 def api_scan(path: str = Query(...)):
-    if not os.path.isdir(path):
-        return JSONResponse({"error": f"not a directory: {path}"}, status_code=400)
-    scanner, findings, score, target, cbom = _run_scan(path)
+    try:
+        safe = resolve_path(path)
+    except PathNotAllowed as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    scanner, findings, score, target, cbom = _run_scan(safe)
     return JSONResponse({
         "target": target,
         "score": score,
@@ -153,7 +214,28 @@ def healthz():
     return {"status": "ok", "version": __version__}
 
 
-def serve(host: str = "127.0.0.1", port: int = 8000):
-    """Launch the demo server (used by the `quantumshield serve` CLI command)."""
+LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1", "127.0.0.0/8"}
+
+
+def is_local_host(host: str) -> bool:
+    return host in LOCAL_HOSTS or host.startswith("127.")
+
+
+def serve(host: str = "127.0.0.1", port: int = 8000, root: str | None = None,
+          allow_remote: bool = False):
+    """Launch the demo server (used by the `quantumshield serve` CLI command).
+
+    Refuses to bind a non-loopback interface unless `allow_remote` is set:
+    this endpoint reads the filesystem and returns source snippets, and it has
+    no authentication, so binding it to 0.0.0.0 by accident should not be one
+    keystroke away.
+    """
     import uvicorn
+
+    resolved_root = configure(root)
+    if not is_local_host(host) and not allow_remote:
+        raise PermissionError(
+            f"refusing to bind {host}: the web UI is unauthenticated and reads "
+            f"files under {resolved_root}. Re-run with --allow-remote if you "
+            f"really intend to expose it.")
     uvicorn.run(app, host=host, port=port)

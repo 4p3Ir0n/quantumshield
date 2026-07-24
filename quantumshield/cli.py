@@ -40,6 +40,11 @@ def main(argv=None):
     serve_p = sub.add_parser("serve", help="launch the demo web UI (needs quantumshield[web])")
     serve_p.add_argument("--host", default="127.0.0.1", help="bind host (default: 127.0.0.1)")
     serve_p.add_argument("--port", type=int, default=8000, help="bind port (default: 8000)")
+    serve_p.add_argument("--root", default=None,
+                         help="confine scans to this directory (default: current directory)")
+    serve_p.add_argument("--allow-remote", action="store_true",
+                         help="permit binding a non-loopback interface (unauthenticated — "
+                              "the UI reads files and returns source snippets)")
 
     args = p.parse_args(argv)
     if args.command == "scan":
@@ -179,8 +184,21 @@ def _run_serve(args):
         print("error: the web UI needs extra dependencies. Install with:\n"
               "  pip install \"quantumshield[web]\"", file=sys.stderr)
         return 2
+    root = os.path.realpath(args.root or os.getcwd())
+    if not os.path.isdir(root):
+        print(f"error: --root {root} is not a directory", file=sys.stderr)
+        return 2
     print(f"QuantumShield v{__version__} — serving demo UI at http://{args.host}:{args.port}")
-    serve(host=args.host, port=args.port)
+    print(f"  scans confined to: {root}")
+    if args.allow_remote:
+        print("  WARNING: --allow-remote is set. This UI has no authentication and\n"
+              "           returns source-line snippets from files under the root.",
+              file=sys.stderr)
+    try:
+        serve(host=args.host, port=args.port, root=root, allow_remote=args.allow_remote)
+    except PermissionError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
     return 0
 
 
